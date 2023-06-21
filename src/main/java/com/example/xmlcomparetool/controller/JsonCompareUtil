@@ -1,0 +1,69 @@
+package com.walmart.services.itemspeedeligibility.util;
+
+import com.google.common.collect.MapDifference;
+import com.google.common.collect.Maps;
+import com.google.gson.Gson;
+import io.strati.libs.google.common.reflect.TypeToken;
+import org.apache.commons.collections.MapUtils;
+
+import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.TreeMap;
+
+public class JsonCompareUtil {
+    public static Map<String, Map<String, Object>> findDifferencesBetweenV5AndDE(String deJsonResponse, String v5JsonResponse) throws Exception {
+        Map<String, Object> deResponse = getRequestMap(deJsonResponse);
+        Map<String, Object> v5Response = getRequestMap(v5JsonResponse);
+        if (MapUtils.isNotEmpty(deResponse) && MapUtils.isNotEmpty(v5Response)) {
+            MapDifference<String, Object> difference = Maps.difference(JsonFlatMapUtil.flatten(deResponse), JsonFlatMapUtil.flatten(v5Response));
+            return processDiff(difference, deResponse, v5Response);
+        }
+        throw new Exception("UNABLE TO PROCESS THE REQUEST, TRY AGAIN");
+    }
+    private static Map<String, Object> getRequestMap(String request) {
+        Gson gson = new Gson();
+        Type type = new TypeToken<Map<String, Object>>() {
+        }.getType();
+
+        return gson.fromJson(request, type);
+    }
+    private static Map<String, Map<String, Object>> processDiff(MapDifference<String, Object> difference, Map<String, Object> deResponse, Map<String, Object> v5Response) {
+        Map<String, Map<String, Object>> finalResponse = new LinkedHashMap<>();
+        Map<String, Object> differences = new HashMap<>();
+        Map<String, Object> onlyFoundInDEMap = new HashMap<>();
+        Map<String, Object> onlyFoundInV5Map = new HashMap<>();
+        Map<String, Object> commonEntries = new HashMap<>();
+
+        difference.entriesDiffering().forEach(
+                (key, value) -> {
+                    Map<String, Object> subEntriesForDiff = new TreeMap<>();
+                    String[] allKeys = key.split("\\.");
+                    String newKey = allKeys[allKeys.length - 1];
+                    subEntriesForDiff.put(newKey + "-DE_Value", value.leftValue());
+                    subEntriesForDiff.put(newKey + "-V5_Value", value.rightValue());
+                    differences.put(key, subEntriesForDiff);
+                }
+        );
+
+        difference.entriesOnlyOnLeft().forEach(
+                (key, value) -> onlyFoundInDEMap.put(key, value)
+        );
+
+        difference.entriesOnlyOnRight().forEach(
+                (key, value) -> onlyFoundInV5Map.put(key, value)
+        );
+
+        difference.entriesInCommon().forEach(
+                (key, value) -> commonEntries.put(key, value)
+        );
+        finalResponse.put("DIFFERENT ENTRIES", differences);
+        finalResponse.put("ENTRIES FOUND IN DE ONLY", onlyFoundInDEMap);
+        finalResponse.put("ENTRIES FOUND IN V5 ONLY", onlyFoundInV5Map);
+//        finalResponse.put("COMMON ENTRIES", commonEntries);
+        finalResponse.put("NORMAL DE RESPONSES", deResponse);
+        finalResponse.put("NORMAL V5 RESPONSE", v5Response);
+        return finalResponse;
+    }
+}
